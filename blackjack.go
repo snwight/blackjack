@@ -14,8 +14,8 @@ import (
 const HouseMinFunds = 5
 const HouseMinBet = 5
 const HouseDealerStay = 17
-const HousePayoffFactor = 2.0    // bet + 100%
-const HouseBlackjackFactor = 2.5 // bet + 150%
+const HousePayoffFactor = 1.0
+const HouseBlackjackFactor = 1.5
 const HouseDfltDeckCount = 2
 const BaseDeckLen = 52
 const BlackjackScore = 21
@@ -25,6 +25,12 @@ const (
 	Push
 	Blackjack
 )
+const NoBetYet = "You haven't placed a bet yet!\n\n"
+const NoDealYet = "No opening deal yet!\n\n"
+const DealerShowing = "Dealer showing: %# v\nYou have: %# v\nSum: %d\n\n"
+const YouWin = "You win %.2f parsohns of space cash\nYou: %d\nDealer: %d\n"
+const YouLose = "You lose %.2f parsohns of space cash\nYou: %d\nDealer: %d\n"
+const YouBusted = "You are bust, loss of %.2f parsohns\n\n"
 
 //
 //   data type declarations
@@ -98,7 +104,7 @@ func main() {
 func deal(ctx *web.Context) string {
 
 	if me.bet == 0 {
-		return fmt.Sprintln("You haven't placed a bet yet!\n")
+		return fmt.Sprint(NoBetYet)
 	}
 
 	if deck == nil || ctx.Params["reload"] == "y" {
@@ -119,11 +125,10 @@ func deal(ctx *web.Context) string {
 
 	if me.hand.sum() == BlackjackScore {
 		win := settle(Blackjack)
-		return fmt.Sprintln("You win %.2f parsohns with a blackjack!\n", win)
+		return fmt.Sprintf(YouWin, win, BlackjackScore, dlr1)
 	}
 
-	return pretty.Sprintf("Dealer showing: %# v\nYou have: %# v\nSum: %d\n\n",
-		dealer.hand[0], me.hand, me.hand.sum())
+	return pretty.Sprintf(DealerShowing, dlr1, me.hand, me.hand.sum())
 
 }
 
@@ -131,11 +136,11 @@ func deal(ctx *web.Context) string {
 func hit() string {
 
 	if me.hand == nil {
-		return fmt.Sprintln("No hits before the opening deal!\n")
+		return fmt.Sprint(NoDealYet)
 	}
 
 	if me.bet == 0 {
-		return fmt.Sprintln("You haven't placed a bet yet!\n")
+		return fmt.Sprint(NoBetYet)
 	}
 
 	card := pop()
@@ -144,11 +149,10 @@ func hit() string {
 	sum := me.hand.sum()
 	if sum > BlackjackScore {
 		loss := settle(Loss)
-		return fmt.Sprintln("You are bust, loss of %.2f parsohns\n", loss)
+		return fmt.Sprintf(YouBusted, loss)
 	}
 
-	return pretty.Sprintf("Dealer showing: %# v\nYou have: %# v\nSum: %d\n\n",
-		dealer.hand[0], me.hand, me.hand.sum())
+	return pretty.Sprintf(DealerShowing, dealer.hand[0], me.hand, me.hand.sum())
 
 }
 
@@ -156,7 +160,7 @@ func hit() string {
 func stay() string {
 
 	if me.bet == 0 {
-		return fmt.Sprint("You haven't placed a bet yet!\n")
+		return fmt.Sprint(NoBetYet)
 	}
 
 	// the dealer now finishes his hand
@@ -167,14 +171,13 @@ func stay() string {
 	switch {
 	case dealerScore > BlackjackScore || myScore > dealerScore:
 		win := settle(Win)
-		return fmt.Sprintf("You win %.2f parsohns of space cash\n\n", win)
+		return fmt.Sprintf(YouWin, win, myScore, dealerScore)
 	case myScore == dealerScore:
 		settle(Push)
 		return fmt.Sprintf("Push!\n\n")
 	default:
 		loss := settle(Loss)
-		return fmt.Sprintf("You lose %.2f parsohns: %d to dealer's %d\n\n",
-			loss, myScore, dealerScore)
+		return fmt.Sprintf(YouLose, loss, myScore, dealerScore)
 	}
 
 }
@@ -200,7 +203,7 @@ func bet(ctx *web.Context) string {
 	me.bet += bet
 	me.funds -= bet
 
-	return fmt.Sprintf("Your bet: %.2f parsohns of space cash\n\n", bet)
+	return fmt.Sprintf("Your current bet: %.2f parsohns of space cash\n\n", me.bet)
 
 }
 
@@ -223,7 +226,7 @@ func deposit(ctx *web.Context) string {
 func hand() string {
 
 	if me.hand == nil {
-		return fmt.Sprintln("No hand before the opening deal!\n")
+		return fmt.Sprint(NoDealYet)
 	}
 
 	return pretty.Sprintf("Dealer showing: %# v\nYou have: %# v\nSum: %d\n\n",
@@ -248,7 +251,7 @@ func show_deck(ctx *web.Context) string {
 
 	// check our "security" - not security
 	if ctx.Params["auth"] != "titanoboa" {
-		return fmt.Sprintf("Incorrect auth\n\n")
+		return fmt.Sprint("Incorrect auth\n\n")
 	}
 
 	return pretty.Sprintf("Current state of deck: %# v\n\n", deck)
@@ -259,7 +262,7 @@ func show_deck(ctx *web.Context) string {
 func size_deck(ctx *web.Context) string {
 
 	if ctx.Params["auth"] != "titanoboa" {
-		return fmt.Sprintf("Incorrect auth\n\n")
+		return fmt.Sprint("Incorrect auth\n\n")
 	}
 
 	num, err := fmt.Sscanf(ctx.Params["count"], "%d", &deckCount)
@@ -336,7 +339,7 @@ func (hand Hand) sum() int {
 	if ace > 0 && sum > Blackjack {
 		sum -= 10
 		if ace == 2 {
-			fmt.Println("two aces! we should split!/n")
+			fmt.Print("Two aces! we should split.../n/n")
 		}
 	}
 	return sum
@@ -350,16 +353,17 @@ func settle(result int) float64 {
 	switch result {
 	case Win:
 		net = me.bet * HousePayoffFactor
-		me.funds += net
+		me.funds += (me.bet + net)
 		dealer.funds -= net
 	case Blackjack:
 		net = me.bet * HouseBlackjackFactor
-		me.funds += net
+		me.funds += (me.bet + net)
 		dealer.funds -= net
 	case Loss:
 		net = me.bet
 		dealer.funds += net
 	case Push:
+		net = 0.0
 		me.funds += me.bet
 	}
 
