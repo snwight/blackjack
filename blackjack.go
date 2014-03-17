@@ -144,7 +144,7 @@ func hit() string {
 	sum := me.hand.sum()
 	if sum > BlackjackScore {
 		loss := settle(Loss)
-		return fmt.Sprintln("You are bust, loss of %f parsohns\n", loss)
+		return fmt.Sprintln("You are bust, loss of %.2f parsohns\n", loss)
 	}
 
 	return pretty.Sprintf("Dealer showing: %# v\nYou have: %# v\nSum: %d\n\n",
