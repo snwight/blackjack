@@ -8,10 +8,9 @@ import (
 	"time"
 )
 
-/*
-   data type declarations
-*/
-
+//
+//   CONSTANTS
+//
 const HouseMinFunds = 5
 const HouseMinBet = 5
 const HouseDealerStay = 17
@@ -27,14 +26,16 @@ const (
 	Blackjack
 )
 
-// note single value per card
+//
+//   data type declarations
+//
+
 type Card struct {
 	value int
 	name  string
 }
 type Hand []Card
 
-// participants are only single player and dealer
 type Player struct {
 	hand  Hand
 	funds float64
@@ -43,36 +44,36 @@ type Player struct {
 type Dealer struct {
 	hand  Hand
 	funds float64
-	gains float64
 }
 
 type Deck []Card
 
-/*
-   "global" data objects
-*/
+//
+//  GLOBAL DATA
+//
 
-// a single initialized sorted deck - aces defaulted to value 1
+// our template deck - aces defaulted to value 11
 var fullDeck = Deck{
-	{1, "AC"}, {2, "2C"}, {3, "3C"}, {4, "4C"}, {5, "5C"}, {6, "6C"}, {7, "7C"},
-	{8, "8C"}, {9, "9C"}, {10, "10C"}, {10, "JC"}, {10, "QC"}, {10, "KC"},
-	{1, "AD"}, {2, "2D"}, {3, "3D"}, {4, "4D"}, {5, "5D"}, {6, "6D"}, {7, "7D"},
-	{8, "8D"}, {9, "9D"}, {10, "10D"}, {10, "JD"}, {10, "QD"}, {10, "KD"},
-	{1, "AH"}, {2, "2H"}, {3, "3H"}, {4, "4H"}, {5, "5H"}, {6, "6H"}, {7, "7H"},
-	{8, "8H"}, {9, "9H"}, {10, "10H"}, {10, "JH"}, {10, "QH"}, {10, "KH"},
-	{1, "AS"}, {2, "2S"}, {3, "3S"}, {4, "4S"}, {5, "5S"}, {6, "6S"}, {7, "7S"},
-	{8, "8S"}, {9, "9S"}, {10, "10S"}, {10, "JS"}, {10, "QS"}, {10, "KS"},
+	{2, "2C"}, {3, "3C"}, {4, "4C"}, {5, "5C"}, {6, "6C"}, {7, "7C"}, {8, "8C"},
+	{9, "9C"}, {10, "10C"}, {10, "JC"}, {10, "QC"}, {10, "KC"}, {11, "AC"},
+	{2, "2D"}, {3, "3D"}, {4, "4D"}, {5, "5D"}, {6, "6D"}, {7, "7D"}, {8, "8D"},
+	{9, "9D"}, {10, "10D"}, {10, "JD"}, {10, "QD"}, {10, "KD"}, {11, "AD"},
+	{2, "2H"}, {3, "3H"}, {4, "4H"}, {5, "5H"}, {6, "6H"}, {7, "7H"}, {8, "8H"},
+	{9, "9H"}, {10, "10H"}, {10, "JH"}, {10, "QH"}, {10, "KH"}, {11, "AH"},
+	{2, "2S"}, {3, "3S"}, {4, "4S"}, {5, "5S"}, {6, "6S"}, {7, "7S"}, {8, "8S"},
+	{9, "9S"}, {10, "10S"}, {10, "JS"}, {10, "QS"}, {10, "KS"}, {11, "AS"},
 }
 var deck Deck
 var deckCount = HouseDfltDeckCount
 
-var dealer = Dealer{nil, 1000000, 0}
+var dealer = Dealer{nil, 1000000}
 var me = Player{nil, 0, 0}
 
-/*
-   load the callbacks and start the webgo server
-*/
+//
+//  load the callbacks and start the http server
+//
 func main() {
+	// used in shuffle algorithm
 	rand.Seed(time.Now().UnixNano())
 	// player api
 	web.Get("/deal", deal)
@@ -83,29 +84,27 @@ func main() {
 	web.Get("/deposit", deposit)
 	web.Get("/funds", funds)
 	// admin api
-	web.Pot("/show_deck", show_deck)
-	web.Get("/size_deck", size_deck)
+	web.Post("/show_deck", show_deck)
+	web.Post("/size_deck", size_deck)
+	// kick it off
 	web.Run("0.0.0.0:9999")
 }
 
-/*
-   API callbacks
-*/
+//
+//  PUBLIC API CALLBACKS
+//
 
 // curl http://localhost:9999/deal[?reload=y]
 func deal(ctx *web.Context) string {
 
-	// ensure a bet has been placed
 	if me.bet == 0 {
 		return fmt.Sprintln("You haven't placed a bet yet!\n")
 	}
 
-	// play with a full deck/s
 	if deck == nil || ctx.Params["reload"] == "y" {
 		reload()
 	}
 
-	// trust in garbage collection
 	dealer.hand = nil
 	me.hand = nil
 
@@ -115,11 +114,9 @@ func deal(ctx *web.Context) string {
 	dlr2 := pop()
 	me2 := pop()
 
-	// update everyone's hands
 	dealer.hand = append(dealer.hand, dlr1, dlr2)
 	me.hand = append(me.hand, me1, me2)
 
-	// check for a blackjack now, after first pair is dealt
 	if me.hand.sum() == BlackjackScore {
 		win := settle(Blackjack)
 		return fmt.Sprintln("You win %.2f parsohns with a blackjack!\n", win)
@@ -133,21 +130,17 @@ func deal(ctx *web.Context) string {
 // curl http://localhost:9999/hit
 func hit() string {
 
-	// make sure initial deal has happened
 	if me.hand == nil {
 		return fmt.Sprintln("No hits before the opening deal!\n")
 	}
 
-	// ensure a bet has been placed
 	if me.bet == 0 {
 		return fmt.Sprintln("You haven't placed a bet yet!\n")
 	}
 
-	// pull top card off and add to hand
 	card := pop()
 	me.hand = append(me.hand, card)
 
-	// check for a bust and cleanup accounts if so
 	sum := me.hand.sum()
 	if sum > BlackjackScore {
 		loss := settle(Loss)
@@ -162,7 +155,6 @@ func hit() string {
 // curl http://localhost:9999/hit
 func stay() string {
 
-	// ensure a bet has been placed
 	if me.bet == 0 {
 		return fmt.Sprint("You haven't placed a bet yet!\n")
 	}
@@ -170,20 +162,16 @@ func stay() string {
 	// the dealer now finishes his hand
 	dealer_wrap()
 
-	// otherwise we conclude our deliberations
 	myScore := me.hand.sum()
 	dealerScore := dealer.hand.sum()
 	switch {
 	case dealerScore > BlackjackScore || myScore > dealerScore:
-		// dealer is bust! player wins
 		win := settle(Win)
 		return fmt.Sprintf("You win %.2f parsohns of space cash\n\n", win)
 	case myScore == dealerScore:
-		// it's a push - return bet to player funds
 		settle(Push)
 		return fmt.Sprintf("Push!\n\n")
 	default:
-		// player lost - bet goes to dealer funds
 		loss := settle(Loss)
 		return fmt.Sprintf("You lose %.2f parsohns: %d to dealer's %d\n\n",
 			loss, myScore, dealerScore)
@@ -194,14 +182,12 @@ func stay() string {
 // curl http://localhost:9999/bet?amount=XXX
 func bet(ctx *web.Context) string {
 	var bet float64
-	num, _ := fmt.Sscanf(ctx.Params["amount"], "%f", &bet)
 
-	// if no parameters - treat this as a query
+	num, _ := fmt.Sscanf(ctx.Params["amount"], "%f", &bet)
 	if num == 0 {
 		return fmt.Sprintf("Your current bet: %.2f\n\n", me.bet)
 	}
 
-	// check the bookeeping before accepting bet
 	if bet < HouseMinBet {
 		return fmt.Sprintf("Bet %.2f is under house minimum (%.2f)\n\n",
 			HouseMinBet, bet)
@@ -211,7 +197,6 @@ func bet(ctx *web.Context) string {
 			bet, me.funds)
 	}
 
-	// move bet to 'table'
 	me.bet += bet
 	me.funds -= bet
 
@@ -223,13 +208,11 @@ func bet(ctx *web.Context) string {
 func deposit(ctx *web.Context) string {
 	var deposit float64
 
-	// check for format problems
 	num, err := fmt.Sscanf(ctx.Params["amount"], "%f", &deposit)
 	if num != 1 {
 		return fmt.Sprintf("Deposit failed, %# v\n\n", err)
 	}
 
-	// transfer the funds
 	me.funds += deposit
 
 	return fmt.Sprintf("Deposited %.2f\n\n", deposit)
@@ -239,12 +222,10 @@ func deposit(ctx *web.Context) string {
 // curl http://localhost:9999/hand
 func hand() string {
 
-	// make sure initial deal has happened
 	if me.hand == nil {
 		return fmt.Sprintln("No hand before the opening deal!\n")
 	}
 
-	// report player status
 	return pretty.Sprintf("Dealer showing: %# v\nYou have: %# v\nSum: %d\n\n",
 		dealer.hand[0], me.hand, me.hand.sum())
 
@@ -253,31 +234,34 @@ func hand() string {
 // curl http://localhost:9999/funds
 func funds() string {
 
-	// report player available funds
 	return fmt.Sprintf("Your remaining funds: %.2f parsohns of space cash\n\n",
 		me.funds)
 
 }
 
-/*
-   ADMIN API
-*/
+//
+//  ADMIN API
+//
 
-// curl --data auth="titanoboa" http://localhost:9999/show_deck
-// XXX very serious security hole! for debugging only XXX
+// curl --data auth=titanoboa http://localhost:9999/show_deck
 func show_deck(ctx *web.Context) string {
-	// check our "security"
+
+	// check our "security" - not security
 	if ctx.Params["auth"] != "titanoboa" {
-		return fmt.Sprintf("Incorrect auth\n")
+		return fmt.Sprintf("Incorrect auth\n\n")
 	}
 
 	return pretty.Sprintf("Current state of deck: %# v\n\n", deck)
+
 }
 
-// curl http://localhost:9999/size_deck?count=XXX
+// curl --data auth=titanoboa --data count=XXX http://localhost:9999/size_deck
 func size_deck(ctx *web.Context) string {
 
-	// update the global deck count
+	if ctx.Params["auth"] != "titanoboa" {
+		return fmt.Sprintf("Incorrect auth\n\n")
+	}
+
 	num, err := fmt.Sscanf(ctx.Params["count"], "%d", &deckCount)
 	if num != 1 {
 		return fmt.Sprintf("Deck resize failed, %# v\n\n", err)
@@ -290,17 +274,14 @@ func size_deck(ctx *web.Context) string {
 
 }
 
-/*
-   utility functions
-*/
+//
+//  UTILITY FUNCTIONS
+//
 
 // reinitialize deck/s with deckCount fresh packs
 func reload() {
 
-	// 'free' the global deck
 	deck = nil
-
-	// allocate a new [possibly multi-deck] deck
 	deckLen := deckCount * BaseDeckLen
 	deck = make(Deck, deckLen)
 
@@ -309,8 +290,8 @@ func reload() {
 		copy(deck[i:], fullDeck)
 	}
 
-	// shuffle because model is sorted in order
 	deck.shuffle()
+
 	return
 
 }
@@ -330,10 +311,9 @@ func (deck Deck) shuffle() Deck {
 
 }
 
-// implement Algorithm P, Knuth/Durstenfeld
+// pull the top card and reset head of list
 func pop() Card {
 
-	// pop card and update deck slice
 	card := deck[0]
 	deck = deck[1:]
 	return card
@@ -365,8 +345,8 @@ func (hand Hand) sum() int {
 
 // sort out the funds transfers and clear per-game state (hands and bets)
 func settle(result int) float64 {
-	net := 0.0
 
+	net := 0.0
 	switch result {
 	case Win:
 		net = me.bet * HousePayoffFactor
@@ -383,11 +363,11 @@ func settle(result int) float64 {
 		me.funds += me.bet
 	}
 
-	// discard the dealt hands
 	dealer.hand = nil
 	me.hand = nil
-	me.bet = 0
+	me.bet = 0.0
 	return net
+
 }
 
 // after player/s have stayed or busted, this is called to complete the dealer's hand
@@ -399,7 +379,6 @@ func dealer_wrap() {
 		dealer.hand = append(dealer.hand, card)
 	}
 
-	// yes, we may be bust, press on regardless
 	return
 
 }
