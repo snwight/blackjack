@@ -229,8 +229,7 @@ func hand() string {
 		return fmt.Sprint(NoDealYet)
 	}
 
-	return pretty.Sprintf("Dealer showing: %# v\nYou have: %# v\nSum: %d\n\n",
-		dealer.hand[0], me.hand, me.hand.sum())
+	return pretty.Sprintf(DealerShowing, dealer.hand[0], me.hand, me.hand.sum())
 
 }
 
@@ -258,12 +257,8 @@ func show_deck(ctx *web.Context) string {
 
 }
 
-// curl --data auth=titanoboa --data count=XXX http://localhost:9999/size_deck
+// curl --data count=XXX http://localhost:9999/size_deck
 func size_deck(ctx *web.Context) string {
-
-	if ctx.Params["auth"] != "titanoboa" {
-		return fmt.Sprint("Incorrect auth\n\n")
-	}
 
 	num, err := fmt.Sscanf(ctx.Params["count"], "%d", &deckCount)
 	if num != 1 {
