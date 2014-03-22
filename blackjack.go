@@ -55,6 +55,7 @@ type Card struct {
 	value int
 	name  string
 }
+
 type Deck []Card
 type Hand []Card
 
@@ -64,6 +65,7 @@ type Player struct {
 	funds float64
 	bet   float64
 }
+
 type Dealer struct {
 	hand  Hand
 	funds float64
@@ -79,9 +81,7 @@ type State struct {
 	me        Player
 	deckCount int
 	deck      Deck
-	// NB: bidirectional for first pass - should not be
-	cmdChan chan Cmd
-	resChan chan string
+	cmdChan   chan Cmd
 }
 
 //
@@ -200,23 +200,24 @@ func deck_resize_cmd(ctx *web.Context) {
 }
 
 // curl http://localhost:9999/create_player?name=NAME&amount=XXX
-func create_player(ctx *web.Context) string {
+func create_player(ctx *web.Context) {
 
 	// add the player NAME to the list of players if new
 	var startFunds float64
-	fmt.Sscanf(ctx.Params["amount"], "%d", &startFunds)
+	fmt.Sscanf(ctx.Params["amount"], "%g", &startFunds)
 	name := ctx.Params["name"]
 
 	// create State object, allocate comms channels, init bank funds
 	if _, ok := playerList[name]; !ok {
 		playerList[name] = State{
 			Dealer{nil, HouseFunds},
-			Player{name, nil, 0, startFunds},
-			HouseDfltDeckCount, nil, nil, nil,
+			Player{name, nil, startFunds, 0},
+			HouseDfltDeckCount, nil, nil,
 		}
+		fmt.Printf("Player created: %# v\n\n", playerList[name])
 	}
 
-	return fmt.Sprintf("Player created: %# v\n\n", playerList[name])
+	return
 
 }
 
@@ -231,50 +232,52 @@ func create_game(ctx *web.Context) string {
 
 	// update the state object for this new game
 	state := playerList[userName]
-	state.cmdChan = make(chan Cmd)
-	state.resChan = make(chan string)
+	state.cmdChan = make(chan Cmd, 1)
 	reload(state.deck, state.deckCount)
+	playerList[userName] = state
 
 	// the idea here is we encapsulate all game state in the following closure
 	go func(name string) {
 
 		for {
-			switch cmd := <-state.cmdChan; cmd.code {
+
+			pretty.Printf("LOOP: blocking on chan  %v\n\n", state.cmdChan)
+			cmd := <-state.cmdChan
+			pretty.Printf("LOOP: cmd %v\n\n", cmd)
+
+			switch cmd.code {
 			case DealCmd:
-				go state.deal()
+				state.deal()
 			case HitCmd:
-				go state.hit()
+				state.hit()
 			case StayCmd:
-				go state.stay()
+				state.stay()
 			case BetCmd:
 				bet := 0.0
 				fmt.Sscanf(cmd.value, "%f", &bet)
-				go state.bet(bet)
+				state.bet(bet)
 			case DepositCmd:
 				deposit := 0.0
 				fmt.Sscanf(cmd.value, "%f", &deposit)
-				go state.deposit(deposit)
+				state.deposit(deposit)
 			case HandCmd:
-				go state.hand()
+				state.hand()
 			case FundsCmd:
-				go state.funds()
+				state.funds()
 			case ShowDeckCmd:
-				if ctx.Params["auth"] != "titanoboa" {
+				if cmd.value != "titanoboa" {
 					fmt.Print("Incorrect auth\n\n")
 					return
 				}
-				go state.deck_show()
+				state.deck_show()
 			case ResizeDeckCmd:
 				count := 0
 				fmt.Sscanf(cmd.value, "%d", &count)
-				go state.deck_resize(count)
+				state.deck_resize(count)
 			default:
 				fmt.Printf("Unknown cmd %# v\n\n", cmd)
 				return
 			}
-
-			// block, waiting response on response channel
-			fmt.Println(<-state.resChan)
 
 		}
 
@@ -283,15 +286,16 @@ func create_game(ctx *web.Context) string {
 	return fmt.Sprintf("Game created, user %s\n\n", userName)
 }
 
-func (state State) deal() {
+func (state State) deal() string {
+
+	pretty.Printf("deal: %# v\n\n", state)
 
 	if state.me.bet == 0 {
-		state.resChan <- fmt.Sprint(NoBetYet)
-		return
+		return fmt.Sprint(NoBetYet)
 	}
 
 	if state.deck == nil || state.deck.sum() < MinDeckSum {
-		reload(state.deck, state.deckCount)
+		state.deck = reload(state.deck, state.deckCount)
 	}
 
 	state.dealer.hand = nil
@@ -306,28 +310,29 @@ func (state State) deal() {
 	state.dealer.hand = append(state.dealer.hand, dlr1, dlr2)
 	state.me.hand = append(state.me.hand, me1, me2)
 
+	// how funky is this? righteously so.
+	playerList[state.me.name] = state
+
 	if state.me.hand.sum() == BlackjackScore {
 		win := state.settle(Blackjack)
-		state.resChan <- fmt.Sprintf(YouWin, win, BlackjackScore, dlr1)
-		return
+		return fmt.Sprintf(YouWin, win, BlackjackScore, dlr1)
 	}
 
-	state.resChan <- pretty.Sprintf(DealerShowing, dlr1,
+	return pretty.Sprintf(DealerShowing, dlr1,
 		state.me.hand, state.me.hand.sum())
 
-	return
 }
 
-func (state State) hit() {
+func (state State) hit() string {
+
+	pretty.Printf("hit: %# v\n\n", state)
 
 	if state.me.hand == nil {
-		state.resChan <- fmt.Sprint(NoDealYet)
-		return
+		return fmt.Sprint(NoDealYet)
 	}
 
 	if state.me.bet == 0 {
-		state.resChan <- fmt.Sprint(NoBetYet)
-		return
+		return fmt.Sprint(NoBetYet)
 	}
 
 	card := state.deck.pop()
@@ -336,19 +341,19 @@ func (state State) hit() {
 	sum := state.me.hand.sum()
 	if sum > BlackjackScore {
 		loss := state.settle(Loss)
-		state.resChan <- fmt.Sprintf(YouBusted, loss)
-		return
+		return fmt.Sprintf(YouBusted, loss)
 	}
 
-	state.resChan <- pretty.Sprintf(DealerShowing, state.dealer.hand[0], state.me.hand, sum)
-	return
+	return pretty.Sprintf(DealerShowing, state.dealer.hand[0], state.me.hand, sum)
+
 }
 
-func (state State) stay() {
+func (state State) stay() string {
+
+	pretty.Printf("stay: %# v\n\n", state)
 
 	if state.me.bet == 0 {
-		state.resChan <- fmt.Sprint(NoBetYet)
-		return
+		return fmt.Sprint(NoBetYet)
 	}
 
 	state.dealer_wrap()
@@ -358,62 +363,62 @@ func (state State) stay() {
 	switch {
 	case dealerScore > BlackjackScore || myScore > dealerScore:
 		win := state.settle(Win)
-		state.resChan <- fmt.Sprintf(YouWin, win, myScore, dealerScore)
+		return fmt.Sprintf(YouWin, win, myScore, dealerScore)
 	case myScore == dealerScore:
 		state.settle(Push)
-		state.resChan <- fmt.Sprintf("Push!\n\n")
+		return fmt.Sprintf("Push!\n\n")
 	default:
 		loss := state.settle(Loss)
-		state.resChan <- fmt.Sprintf(YouLose, loss, myScore, dealerScore)
+		return fmt.Sprintf(YouLose, loss, myScore, dealerScore)
 	}
-
-	return
 
 }
 
-func (state State) bet(bet float64) {
+func (state State) bet(bet float64) string {
+
+	pretty.Printf("bet: %f, %# v\n\n", bet, state)
 
 	if bet < HouseMinBet {
-		state.resChan <- fmt.Sprintf("Bet %.2f is under house minimum (%.2f)\n\n", HouseMinBet, bet)
-		return
+		return fmt.Sprintf("Bet %.2f is under house minimum (%.2f)\n\n", HouseMinBet, bet)
 	}
 	if bet > state.me.funds {
-		state.resChan <- fmt.Sprintf("Bet %.2f is above your available funds (%.2f)\n\n", bet, state.me.funds)
-		return
+		return fmt.Sprintf("Bet %.2f is above your available funds (%.2f)\n\n", bet, state.me.funds)
 	}
 
 	state.me.bet += bet
 	state.me.funds -= bet
 
-	state.resChan <- fmt.Sprintf("Your current bet: %.2f parsohns of space cash\n\n", state.me.bet)
-	return
+	return fmt.Sprintf("Your current bet: %.2f parsohns of space cash\n\n", state.me.bet)
 
 }
 
-func (state State) deposit(amount float64) {
+func (state State) deposit(amount float64) string {
+
+	pretty.Printf("deposit: %f, %# v\n\n", amount, state)
 
 	state.me.funds += amount
-	state.resChan <- fmt.Sprintf("Deposited %.2f\n\n", amount)
-	return
+	return fmt.Sprintf("Deposited %.2f\n\n", amount)
 
 }
 
-func (state State) hand() {
+func (state State) hand() string {
+
+	pretty.Printf("hand: %# v\n\n", state)
 
 	if state.me.hand == nil {
-		state.resChan <- fmt.Sprint(NoDealYet)
-		return
+		return fmt.Sprint(NoDealYet)
 	}
 
-	state.resChan <- pretty.Sprintf(DealerShowing,
+	return pretty.Sprintf(DealerShowing,
 		state.dealer.hand[0], state.me.hand, state.me.hand.sum())
-	return
+
 }
 
-func (state State) funds() {
+func (state State) funds() string {
 
-	state.resChan <- fmt.Sprintf("Your remaining funds: %.2f parsohns of space cash\n\n", state.me.funds)
-	return
+	pretty.Printf("funds: %# v\n\n", state)
+
+	return fmt.Sprintf("Your remaining funds: %.2f parsohns of space cash\n\n", state.me.funds)
 
 }
 
@@ -421,19 +426,21 @@ func (state State) funds() {
 //  ADMIN API
 //
 
-func (state State) deck_show() {
+func (state State) deck_show() string {
 
-	state.resChan <- pretty.Sprintf("Current state of deck: %# v\n\n", state.deck)
-	return
+	pretty.Printf("deck_show: %# v\n\n", state)
+
+	return pretty.Sprintf("Current state of deck: %# v\n\n", state.deck)
 
 }
 
-func (state State) deck_resize(deckCount int) {
+func (state State) deck_resize(deckCount int) string {
+
+	pretty.Printf("deck_resize: %# v\n\n", state)
 
 	// reallocate deck at new size
-	reload(state.deck, deckCount)
-	state.resChan <- pretty.Sprintf("New state of deck: %# v\n\n", state.deck)
-	return
+	state.deck = reload(state.deck, deckCount)
+	return pretty.Sprintf("New state of deck: %# v\n\n", state.deck)
 
 }
 
@@ -487,7 +494,7 @@ func (state State) dealer_wrap() {
 //
 
 // reinitialize deck/s with deckCoun ftresh packs
-func reload(deck Deck, deckCount int) {
+func reload(deck Deck, deckCount int) Deck {
 
 	// only reallocate if deck size actually changes
 	deckLen := deckCount * BaseDeckLen
@@ -503,7 +510,7 @@ func reload(deck Deck, deckCount int) {
 
 	deck.shuffle()
 
-	return
+	return deck
 
 }
 
