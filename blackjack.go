@@ -241,43 +241,41 @@ func create_game(ctx *web.Context) string {
 
 		for {
 
-			pretty.Printf("LOOP: blocking on chan  %v\n\n", state.cmdChan)
-			cmd := <-state.cmdChan
-			pretty.Printf("LOOP: cmd %v\n\n", cmd)
-
-			switch cmd.code {
+			switch cmd := <-state.cmdChan; cmd.code {
 			case DealCmd:
-				state.deal()
+				(&state).deal()
 			case HitCmd:
-				state.hit()
+				(&state).hit()
 			case StayCmd:
-				state.stay()
+				(&state).stay()
 			case BetCmd:
-				bet := 0.0
+				var bet float64
 				fmt.Sscanf(cmd.value, "%f", &bet)
-				state.bet(bet)
+				(&state).bet(bet)
 			case DepositCmd:
-				deposit := 0.0
+				var deposit float64
 				fmt.Sscanf(cmd.value, "%f", &deposit)
-				state.deposit(deposit)
+				(&state).deposit(deposit)
 			case HandCmd:
-				state.hand()
+				(&state).hand()
 			case FundsCmd:
-				state.funds()
+				(&state).funds()
 			case ShowDeckCmd:
 				if cmd.value != "titanoboa" {
 					fmt.Print("Incorrect auth\n\n")
 					return
 				}
-				state.deck_show()
+				(&state).deck_show()
 			case ResizeDeckCmd:
-				count := 0
+				var count int
 				fmt.Sscanf(cmd.value, "%d", &count)
-				state.deck_resize(count)
+				(&state).deck_resize(count)
 			default:
 				fmt.Printf("Unknown cmd %# v\n\n", cmd)
 				return
 			}
+
+			playerList[userName] = state
 
 		}
 
@@ -286,12 +284,11 @@ func create_game(ctx *web.Context) string {
 	return fmt.Sprintf("Game created, user %s\n\n", userName)
 }
 
-func (state State) deal() string {
-
-	pretty.Printf("deal: %# v\n\n", state)
+func (state *State) deal() {
 
 	if state.me.bet == 0 {
-		return fmt.Sprint(NoBetYet)
+		fmt.Print(NoBetYet)
+		return
 	}
 
 	if state.deck == nil || state.deck.sum() < MinDeckSum {
@@ -310,29 +307,27 @@ func (state State) deal() string {
 	state.dealer.hand = append(state.dealer.hand, dlr1, dlr2)
 	state.me.hand = append(state.me.hand, me1, me2)
 
-	// how funky is this? righteously so.
-	playerList[state.me.name] = state
-
 	if state.me.hand.sum() == BlackjackScore {
 		win := state.settle(Blackjack)
-		return fmt.Sprintf(YouWin, win, BlackjackScore, dlr1)
+		fmt.Printf(YouWin, win, BlackjackScore, dlr1)
+		return
 	}
 
-	return pretty.Sprintf(DealerShowing, dlr1,
-		state.me.hand, state.me.hand.sum())
+	pretty.Printf(DealerShowing, dlr1, state.me.hand, state.me.hand.sum())
+	return
 
 }
 
-func (state State) hit() string {
-
-	pretty.Printf("hit: %# v\n\n", state)
+func (state *State) hit() {
 
 	if state.me.hand == nil {
-		return fmt.Sprint(NoDealYet)
+		fmt.Print(NoDealYet)
+		return
 	}
 
 	if state.me.bet == 0 {
-		return fmt.Sprint(NoBetYet)
+		fmt.Print(NoBetYet)
+		return
 	}
 
 	card := state.deck.pop()
@@ -341,19 +336,20 @@ func (state State) hit() string {
 	sum := state.me.hand.sum()
 	if sum > BlackjackScore {
 		loss := state.settle(Loss)
-		return fmt.Sprintf(YouBusted, loss)
+		fmt.Printf(YouBusted, loss)
+		return
 	}
 
-	return pretty.Sprintf(DealerShowing, state.dealer.hand[0], state.me.hand, sum)
+	pretty.Printf(DealerShowing, state.dealer.hand[0], state.me.hand, sum)
+	return
 
 }
 
-func (state State) stay() string {
-
-	pretty.Printf("stay: %# v\n\n", state)
+func (state *State) stay() {
 
 	if state.me.bet == 0 {
-		return fmt.Sprint(NoBetYet)
+		fmt.Print(NoBetYet)
+		return
 	}
 
 	state.dealer_wrap()
@@ -363,62 +359,63 @@ func (state State) stay() string {
 	switch {
 	case dealerScore > BlackjackScore || myScore > dealerScore:
 		win := state.settle(Win)
-		return fmt.Sprintf(YouWin, win, myScore, dealerScore)
+		fmt.Printf(YouWin, win, myScore, dealerScore)
 	case myScore == dealerScore:
 		state.settle(Push)
-		return fmt.Sprintf("Push!\n\n")
+		fmt.Printf("Push!\n\n")
 	default:
 		loss := state.settle(Loss)
-		return fmt.Sprintf(YouLose, loss, myScore, dealerScore)
+		fmt.Printf(YouLose, loss, myScore, dealerScore)
 	}
+
+	return
 
 }
 
-func (state State) bet(bet float64) string {
-
-	pretty.Printf("bet: %f, %# v\n\n", bet, state)
+func (state *State) bet(bet float64) {
 
 	if bet < HouseMinBet {
-		return fmt.Sprintf("Bet %.2f is under house minimum (%.2f)\n\n", HouseMinBet, bet)
+		fmt.Printf("Bet %.2f is under house minimum (%.2f)\n\n", HouseMinBet, bet)
+		return
 	}
 	if bet > state.me.funds {
-		return fmt.Sprintf("Bet %.2f is above your available funds (%.2f)\n\n", bet, state.me.funds)
+		fmt.Printf("Bet %.2f is above your available funds (%.2f)\n\n", bet, state.me.funds)
+		return
 	}
 
 	state.me.bet += bet
 	state.me.funds -= bet
 
-	return fmt.Sprintf("Your current bet: %.2f parsohns of space cash\n\n", state.me.bet)
+	fmt.Printf("Your current bet: %.2f parsohns of space cash\n\n", state.me.bet)
+	return
 
 }
 
-func (state State) deposit(amount float64) string {
-
-	pretty.Printf("deposit: %f, %# v\n\n", amount, state)
+func (state *State) deposit(amount float64) {
 
 	state.me.funds += amount
-	return fmt.Sprintf("Deposited %.2f\n\n", amount)
+
+	fmt.Printf("Deposited %.2f, balance now %.2f\n\n", amount, state.me.funds)
+	return
 
 }
 
-func (state State) hand() string {
-
-	pretty.Printf("hand: %# v\n\n", state)
+func (state *State) hand() {
 
 	if state.me.hand == nil {
-		return fmt.Sprint(NoDealYet)
+		fmt.Print(NoDealYet)
+		return
 	}
 
-	return pretty.Sprintf(DealerShowing,
-		state.dealer.hand[0], state.me.hand, state.me.hand.sum())
+	pretty.Printf(DealerShowing, state.dealer.hand[0], state.me.hand, state.me.hand.sum())
+	return
 
 }
 
-func (state State) funds() string {
+func (state *State) funds() {
 
-	pretty.Printf("funds: %# v\n\n", state)
-
-	return fmt.Sprintf("Your remaining funds: %.2f parsohns of space cash\n\n", state.me.funds)
+	fmt.Printf("Your remaining funds: %.2f parsohns of space cash\n\n", state.me.funds)
+	return
 
 }
 
@@ -426,21 +423,20 @@ func (state State) funds() string {
 //  ADMIN API
 //
 
-func (state State) deck_show() string {
+func (state *State) deck_show() {
 
-	pretty.Printf("deck_show: %# v\n\n", state)
-
-	return pretty.Sprintf("Current state of deck: %# v\n\n", state.deck)
+	pretty.Printf("Current state of deck: %# v\n\n", state.deck)
+	return
 
 }
 
-func (state State) deck_resize(deckCount int) string {
-
-	pretty.Printf("deck_resize: %# v\n\n", state)
+func (state *State) deck_resize(deckCount int) {
 
 	// reallocate deck at new size
 	state.deck = reload(state.deck, deckCount)
-	return pretty.Sprintf("New state of deck: %# v\n\n", state.deck)
+
+	pretty.Printf("New state of deck: %# v\n\n", state.deck)
+	return
 
 }
 
@@ -449,7 +445,7 @@ func (state State) deck_resize(deckCount int) string {
 //
 
 // sort out the funds transfers and clear per-game state (hands and bets)
-func (state State) settle(result int) float64 {
+func (state *State) settle(result int) float64 {
 
 	net := 0.0
 	switch result {
@@ -477,7 +473,7 @@ func (state State) settle(result int) float64 {
 }
 
 // after player/s have stayed or busted, this is called to complete the dealer's hand
-func (state State) dealer_wrap() {
+func (state *State) dealer_wrap() {
 
 	// implement the "hit 'till 17 or bust" rule if necessary
 	for state.dealer.hand.sum() < HouseDealerStay {
@@ -515,25 +511,28 @@ func reload(deck Deck, deckCount int) Deck {
 }
 
 // implement Algorithm P, Knuth/Durstenfeld
-func (deck Deck) shuffle() Deck {
+func (deck *Deck) shuffle() {
 
 	// TL/DR: swap every element with a random earlier element
-	l := len(deck)
+	d := *deck
+	l := len(d)
 	for i := l - 1; i > 0; i-- {
 		j := rand.Intn(l - i)
-		tmp := deck[j]
-		deck[j] = deck[i]
-		deck[i] = tmp
+		tmp := d[j]
+		d[j] = d[i]
+		d[i] = tmp
 	}
-	return deck
+	*deck = d
+	return
 
 }
 
 // pull the top card and reset head of list
-func (deck Deck) pop() Card {
+func (deck *Deck) pop() Card {
 
-	card := deck[0]
-	deck = deck[1:]
+	d := *deck
+	card := d[0]
+	*deck = d[1:]
 	return card
 
 }
@@ -543,10 +542,12 @@ func (hand Hand) sum() int {
 
 	// swap one 11 for a 1 if we're going to bust
 	sum, aces := sum_cards(hand)
+
 	if aces > 0 && sum > Blackjack {
 		sum -= 10
 		fmt.Printf("%d aces! we should split.../n/n", aces)
 	}
+
 	return sum
 
 }
@@ -570,6 +571,7 @@ func sum_cards(cards []Card) (int, int) {
 		}
 		sum += cards[i].value
 	}
+
 	return sum, aces
 
 }
