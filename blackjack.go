@@ -11,22 +11,24 @@ import (
 //
 //   CONSTANTS
 //
-const HouseMinFunds = 5
-const HouseMinBet = 5
-const HouseDealerStay = 17
-const HousePayoffFactor = 1.0
-const HouseBlackjackFactor = 1.5
-const HouseDfltDeckCount = 2
-const HouseFunds = 1000000
-const BaseDeckLen = 52
-const BlackjackScore = 21
-const MinDeckSum = 2*BlackjackScore + 2
-const NoBetYet = "You haven't placed a bet yet!\n\n"
-const NoDealYet = "No opening deal yet!\n\n"
-const DealerShowing = "Dealer showing: %# v\nYou have: %# v\nSum: %d\n\n"
-const YouWin = "You win %.2f parsohns of space cash\nYou: %d\nDealer: %d\n"
-const YouLose = "You lose %.2f parsohns of space cash\nYou: %d\nDealer: %d\n"
-const YouBusted = "You are bust, loss of %.2f parsohns\n\n"
+const (
+	HouseMinFunds        = 5
+	HouseMinBet          = 5
+	HouseDealerStay      = 17
+	HousePayoffFactor    = 1.0
+	HouseBlackjackFactor = 1.5
+	HouseDfltDeckCount   = 2
+	HouseFunds           = 1000000
+	BaseDeckLen          = 52
+	BlackjackScore       = 21
+	MinDeckSum           = 2*BlackjackScore + 2
+	NoBetYet             = "You haven't placed a bet yet!\n\n"
+	NoDealYet            = "No opening deal yet!\n\n"
+	DealerShowing        = "Dealer showing: %# v\nYou have: %# v\nSum: %d\n\n"
+	YouWin               = "You win %.2f parsohns of space cash\nYou: %d\nDealer: %d\n"
+	YouLose              = "You lose %.2f parsohns of space cash\nYou: %d\nDealer: %d\n"
+	YouBusted            = "You are bust, loss of %.2f parsohns\n\n"
+)
 const (
 	Win = iota
 	Loss
