@@ -491,7 +491,7 @@ func (state *State) dealer_wrap() {
 //  UTILITY FUNCTIONS
 //
 
-// reinitialize deck/s with deckCoun ftresh packs
+// reinitialize deck/s with deckCount fresh packs
 func reload(deck Deck, deckCount int) Deck {
 
 	// only reallocate if deck size actually changes
